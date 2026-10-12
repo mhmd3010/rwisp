@@ -67,6 +67,30 @@ async fn main() {
             "/api/routers/{id}/resources",
             get(handlers::routers::resources),
         )
+        .route(
+            "/api/routers/{id}/hotspot/servers",
+            get(handlers::hotspot::servers),
+        )
+        .route(
+            "/api/routers/{id}/hotspot/profiles",
+            get(handlers::hotspot::profiles),
+        )
+        .route(
+            "/api/routers/{id}/hotspot/users",
+            get(handlers::hotspot::users),
+        )
+        .route(
+            "/api/routers/{id}/hotspot/active",
+            get(handlers::hotspot::active),
+        )
+        .route(
+            "/api/routers/{id}/hotspot/ip-bindings",
+            get(handlers::hotspot::ip_bindings),
+        )
+        .route(
+            "/api/routers/{id}/hotspot/hosts",
+            get(handlers::hotspot::hosts),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_admin,

@@ -746,9 +746,9 @@ dependencies = [
 
 [[package]]
 name = "mikrotik-rs"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eee69e2a6bd3a789d1bf798286c6448c1cd689b66a28db565f86c3f193a0e6fe"
+checksum = "bb151ee8081f4f6cf23acce4fe32e3ed34461d3e7025391ba021157e3e62bb2a"
 dependencies = [
  "mikrotik-proto",
  "mikrotik-tokio",
@@ -756,9 +756,9 @@ dependencies = [
 
 [[package]]
 name = "mikrotik-tokio"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a223d8a1a4e0646071ed7afc8a7d59edb7e14af3471713e2def2838025cde101"
+checksum = "d594dcf2fc60d67f970a1e580653f25ac06b5f7896eaaed7c5819e25d9967fff"
 dependencies = [
  "mikrotik-proto",
  "rustls",

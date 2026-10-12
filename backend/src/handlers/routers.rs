@@ -1,12 +1,10 @@
-use std::future::Future;
-
 use axum::Json;
 use axum::extract::{Path, State};
 use serde_json::{Value, json};
 
-use rwisp_server::crypto::EncryptionKey;
 use rwisp_server::routers::{self, RouterRecord};
 
+use super::common::{encryption_key, load_router, parse_id, with_router_timeout};
 use crate::api_error::ApiError;
 use crate::state::AppState;
 
@@ -44,12 +42,6 @@ pub async fn resources(
     let id = parse_id(&id)?;
     let value = with_router_timeout(&state, monitor_resources(&state, id)).await?;
     Ok(Json(value))
-}
-
-fn parse_id(raw: &str) -> Result<u64, ApiError> {
-    raw.trim()
-        .parse::<u64>()
-        .map_err(|_| ApiError::bad_request(format!("invalid router id: {raw}")))
 }
 
 async fn monitor_status(state: &AppState, id: u64) -> Result<Value, ApiError> {
@@ -94,36 +86,6 @@ async fn monitor_resources(state: &AppState, id: u64) -> Result<Value, ApiError>
             "total_hdd_space": resources.total_hdd_space,
         }
     }))
-}
-
-async fn load_router(state: &AppState, id: u64) -> Result<RouterRecord, ApiError> {
-    let record = routers::get_router(&state.db, id)
-        .await?
-        .ok_or_else(|| ApiError::not_found(format!("router {id} was not found")))?;
-
-    if !record.enabled {
-        return Err(ApiError::service_unavailable("router is disabled"));
-    }
-
-    Ok(record)
-}
-
-fn encryption_key(state: &AppState) -> Result<&EncryptionKey, ApiError> {
-    state.encryption_key.as_deref().ok_or_else(|| {
-        ApiError::service_unavailable("router credential encryption is not configured")
-    })
-}
-
-async fn with_router_timeout<F>(state: &AppState, future: F) -> Result<Value, ApiError>
-where
-    F: Future<Output = Result<Value, ApiError>>,
-{
-    match tokio::time::timeout(state.router_timeout, future).await {
-        Ok(result) => result,
-        Err(_) => Err(ApiError::service_unavailable(
-            "router did not respond in time",
-        )),
-    }
 }
 
 fn router_json(record: &RouterRecord) -> Value {
