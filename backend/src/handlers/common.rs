@@ -11,7 +11,7 @@ use crate::state::AppState;
 pub(crate) fn parse_id(raw: &str) -> Result<u64, ApiError> {
     raw.trim()
         .parse::<u64>()
-        .map_err(|_| ApiError::bad_request(format!("invalid router id: {raw}")))
+        .map_err(|_| ApiError::bad_request(format!("invalid id: {raw}")))
 }
 
 pub(crate) async fn load_router(state: &AppState, id: u64) -> Result<RouterRecord, ApiError> {

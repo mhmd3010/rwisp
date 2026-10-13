@@ -3,8 +3,10 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
+use rwisp_server::packages::PackageError;
 use rwisp_server::routers::RouterError;
 use rwisp_server::rwispros::RouterOsError;
+use rwisp_server::vouchers::VoucherError;
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -30,6 +32,13 @@ impl ApiError {
     pub fn not_found(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::NOT_FOUND,
+            message: message.into(),
+        }
+    }
+
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
             message: message.into(),
         }
     }
@@ -77,6 +86,38 @@ impl From<RouterError> for ApiError {
 impl From<RouterOsError> for ApiError {
     fn from(error: RouterOsError) -> Self {
         Self::from_router_os(error)
+    }
+}
+
+impl From<PackageError> for ApiError {
+    fn from(error: PackageError) -> Self {
+        match error {
+            PackageError::Validation { field, message } => {
+                Self::bad_request(format!("invalid `{field}`: {message}"))
+            }
+            PackageError::NotFound { id } => Self::not_found(format!("package {id} was not found")),
+            PackageError::Conflict { message } => Self::conflict(message),
+            PackageError::Database(error) => {
+                eprintln!("package API database error: {error}");
+                Self::internal()
+            }
+        }
+    }
+}
+
+impl From<VoucherError> for ApiError {
+    fn from(error: VoucherError) -> Self {
+        match error {
+            VoucherError::Validation { field, message } => {
+                Self::bad_request(format!("invalid `{field}`: {message}"))
+            }
+            VoucherError::NotFound { id } => Self::not_found(format!("voucher {id} was not found")),
+            VoucherError::Conflict { message } => Self::conflict(message),
+            VoucherError::Database(error) => {
+                eprintln!("voucher API database error: {error}");
+                Self::internal()
+            }
+        }
     }
 }
 

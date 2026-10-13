@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::middleware;
-use axum::routing::get;
+use axum::routing::{get, post};
 use rwisp_server::crypto::EncryptionKey;
 use rwisp_server::db::init_pool;
 use state::AppState;
@@ -90,6 +90,29 @@ async fn main() {
         .route(
             "/api/routers/{id}/hotspot/hosts",
             get(handlers::hotspot::hosts),
+        )
+        .route(
+            "/api/packages",
+            get(handlers::packages::list).post(handlers::packages::create),
+        )
+        .route(
+            "/api/packages/{id}",
+            get(handlers::packages::detail)
+                .put(handlers::packages::update)
+                .delete(handlers::packages::delete),
+        )
+        .route(
+            "/api/vouchers",
+            get(handlers::vouchers::list).post(handlers::vouchers::create),
+        )
+        .route("/api/vouchers/{id}", get(handlers::vouchers::detail))
+        .route(
+            "/api/vouchers/{id}/revoke",
+            post(handlers::vouchers::revoke),
+        )
+        .route(
+            "/api/vouchers/batches/{batch_id}/codes",
+            get(handlers::vouchers::batch_codes),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
