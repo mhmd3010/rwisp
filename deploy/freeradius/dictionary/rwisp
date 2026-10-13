@@ -1,0 +1,18 @@
+# RWISP RADIUS attribute dictionary (FreeRADIUS 3.0).
+#
+# Copy to /etc/freeradius/3.0/dictionary/rwisp and add:
+#   $INCLUDE dictionary/rwisp
+# to /etc/freeradius/3.0/dictionary (or ensure the main dictionary includes it).
+#
+# Used by the optional rlm_sqlcounter definitions so cumulative data/time usage
+# is scoped to the current subscription window.
+
+VENDOR		RWISP			55555
+
+BEGIN-VENDOR	RWISP
+
+ATTRIBUTE	RWISP-Subscription-Start	1	string
+ATTRIBUTE	RWISP-Data-Used			2	integer64
+ATTRIBUTE	RWISP-Time-Used			3	integer64
+
+END-VENDOR	RWISP

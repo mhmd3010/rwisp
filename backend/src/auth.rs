@@ -10,6 +10,7 @@ use crate::api_error::ApiError;
 use crate::state::AppState;
 
 pub const ADMIN_TOKEN_ENV: &str = "ADMIN_API_TOKEN";
+pub const RADIUS_TOKEN_ENV: &str = "RADIUS_INTERNAL_TOKEN";
 const MIN_TOKEN_LEN: usize = 32;
 
 pub struct AdminAuthConfig {
@@ -18,7 +19,11 @@ pub struct AdminAuthConfig {
 
 impl AdminAuthConfig {
     pub fn from_env() -> Option<Self> {
-        let token = std::env::var(ADMIN_TOKEN_ENV).ok()?;
+        Self::from_token_env(ADMIN_TOKEN_ENV)
+    }
+
+    pub fn from_token_env(variable: &str) -> Option<Self> {
+        let token = std::env::var(variable).ok()?;
         let token = token.trim();
         if token.len() < MIN_TOKEN_LEN {
             return None;
@@ -44,9 +49,36 @@ pub async fn require_admin(
     request: Request,
     next: Next,
 ) -> Result<Response, ApiError> {
-    let config = state.admin_auth.as_ref().ok_or_else(|| {
-        ApiError::service_unavailable("router API authentication is not configured")
-    })?;
+    require_token(
+        state.admin_auth.as_deref(),
+        "router API authentication is not configured",
+        request,
+        next,
+    )
+    .await
+}
+
+pub async fn require_internal(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    require_token(
+        state.radius_auth.as_deref(),
+        "RADIUS internal authentication is not configured",
+        request,
+        next,
+    )
+    .await
+}
+
+async fn require_token(
+    config: Option<&AdminAuthConfig>,
+    unconfigured_message: &str,
+    request: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let config = config.ok_or_else(|| ApiError::service_unavailable(unconfigured_message))?;
 
     let candidate = request
         .headers()

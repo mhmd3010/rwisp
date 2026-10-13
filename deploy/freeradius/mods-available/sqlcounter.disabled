@@ -1,0 +1,46 @@
+# RWISP optional FreeRADIUS-side counters - DISABLED BY DESIGN. DO NOT ENABLE.
+#
+# This file is a corrected REFERENCE only. It is named `.disabled` so it is not
+# picked up by `mods-enabled` and is never symlinked by the deployment script.
+#
+# WHY DISABLED: accurate, subscription-scoped, 64-bit usage enforcement is done
+# in Rust (RWISP /internal/radius/authorize, over tbl_radius_sessions). These
+# FreeRADIUS counters read `radacct`, which in this deployment has NO
+# acctinputgigawords / acctoutputgigawords columns, so they can only sum 32-bit
+# octets and would under-count sessions larger than 4 GiB. Enabling them would
+# be an inaccurate fallback.
+#
+# To use them you must first:
+#   1. Add acctinputgigawords / acctoutputgigawords to `radacct` (FreeRADIUS
+#      schema change - out of scope).
+#   2. Install dictionary/rwisp ($INCLUDE dictionary/rwisp) so the vendor
+#      attributes resolve.
+#   3. Ensure RWISP authorize emits reply:RWISP-Subscription-Start (it does).
+#   4. Rename this file to `sqlcounter`, symlink it into mods-enabled, add
+#      `sqlcounter` to the authorize section AFTER `rwisp-rest`, and add a
+#      per-counter query file under mods-config/sql/counter/mysql/.
+#
+# Syntax follows the stock 3.0.21 template (counter_name/check_name/reply_name/
+# key/reset + $INCLUDE of the query file).
+
+sqlcounter data_limit {
+	sql_module_instance = sql
+	dialect = mysql
+	counter_name = RWISP-Data-Used
+	check_name = Max-Octets
+	reply_name = Session-Timeout
+	key = User-Name
+	reset = never
+	$INCLUDE ${modconfdir}/sql/counter/mysql/rwisp_data_limit.conf
+}
+
+sqlcounter time_limit {
+	sql_module_instance = sql
+	dialect = mysql
+	counter_name = RWISP-Time-Used
+	check_name = Max-All-Session
+	reply_name = Session-Timeout
+	key = User-Name
+	reset = never
+	$INCLUDE ${modconfdir}/sql/counter/mysql/rwisp_time_limit.conf
+}

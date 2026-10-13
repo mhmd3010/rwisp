@@ -1,0 +1,45 @@
+# FreeRADIUS 3.0.21 rlm_rest module for RWISP.
+#
+# Copy to /etc/freeradius/3.0/mods-available/rest and enable:
+#   ln -s ../mods-available/rest /etc/freeradius/3.0/mods-enabled/rest
+#
+# Plain HTTP over the loopback interface: RWISP is bound to 127.0.0.1:3100.
+# Do NOT reference ${..tls} here - the tls subsection is unused (and commented
+# out in the stock module), so `${..tls}` is an unresolved reference and the
+# server fails to start.
+#
+# The Authorization header is supplied per-request from the virtual server via
+# control:REST-HTTP-Header (see policy.d/rwisp-rest).
+
+rest {
+	connect_uri = "http://127.0.0.1:3100"
+	connect_timeout = 2.0
+
+	authorize {
+		uri = "${..connect_uri}/internal/radius/authorize"
+		method = 'post'
+		body = 'json'
+	}
+
+	authenticate {
+		uri = "${..connect_uri}/internal/radius/authenticate"
+		method = 'post'
+		body = 'json'
+	}
+
+	accounting {
+		uri = "${..connect_uri}/internal/radius/accounting"
+		method = 'post'
+		body = 'json'
+	}
+
+	pool {
+		start = 0
+		min = 1
+		max = 8
+		spare = 2
+		uses = 0
+		lifetime = 0
+		idle_timeout = 60
+	}
+}

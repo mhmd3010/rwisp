@@ -1,0 +1,47 @@
+# RWISP reference FreeRADIUS SQL module settings (FreeRADIUS 3.0).
+#
+# This is a REFERENCE, not an automatic override. If you already have a working
+# `sql` module, keep it and only verify the two points below.
+#
+# Required for RWISP:
+#   * read_clients = yes       -> NAS clients are read from the MariaDB `nas`
+#                                 table (preserve MariaDB NAS registration;
+#                                 do NOT disable this).
+#   * client_table = "nas"
+#
+# Accounting must write `radacct` (used by SimUse and any sqlcounter), and the
+# RWISP rlm_rest accounting hook runs alongside it for 64-bit RWISP tracking.
+
+sql {
+	dialect = "mysql"
+	driver = "rlm_sql_${dialect}"
+
+	server = "localhost"
+	port = 3306
+	login = "radius"
+	password = "changeme"
+	radius_db = "radius"
+
+	# Preserve MariaDB NAS registration.
+	read_clients = yes
+	client_table = "nas"
+
+	# Simultaneous-Use enforcement (device limit): count open sessions.
+	simul_count_query = "SELECT COUNT(*) FROM radacct WHERE username = '%{SQL-User-Name}' AND acctstoptime IS NULL"
+	simul_verify_query = "SELECT framedipaddress FROM radacct WHERE username = '%{SQL-User-Name}' AND acctstoptime IS NULL"
+
+	# Authorize check/reply (RWISP sets limits via rlm_rest; radcheck/radreply
+	# remain available for FreeRADIUS-native attributes if needed).
+	group_attribute = "SQL-Group"
+	authorize_check_query = "SELECT id, username, attribute, value, op FROM radcheck WHERE username = '%{SQL-User-Name}' ORDER BY id"
+	authorize_reply_query = "SELECT id, username, attribute, value, op FROM radreply WHERE username = '%{SQL-User-Name}' ORDER BY id"
+
+	accounting {
+		reference = "%{tolower:type.%{Acct-Status-Type}.query}"
+		type {
+			start { query = "UPDATE radacct SET acctstarttime = NOW(), acctupdatetime = NOW(), acctstoptime = NULL, acctterminatecause = '', connectinfo_start = '%{connectinfo:Connect-Info}' WHERE acctuniqueid = '%{Acct-Unique-Session-Id}'" }
+			interim-update { query = "UPDATE radacct SET acctupdatetime = NOW(), acctinterval = %{%{Acct-Interval-Start}:-0} WHERE acctuniqueid = '%{Acct-Unique-Session-Id}'" }
+			stop { query = "UPDATE radacct SET acctstoptime = NOW(), acctterminatecause = '%{Acct-Terminate-Cause}', connectinfo_stop = '%{connectinfo:Connect-Info}' WHERE acctuniqueid = '%{Acct-Unique-Session-Id}'" }
+		}
+	}
+}

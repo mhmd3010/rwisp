@@ -45,6 +45,11 @@ async fn main() {
         eprintln!("Admin API authentication is not configured (set ADMIN_API_TOKEN)");
     }
 
+    let radius_auth = auth::AdminAuthConfig::from_token_env(auth::RADIUS_TOKEN_ENV).map(Arc::new);
+    if radius_auth.is_none() {
+        eprintln!("RADIUS internal authentication is not configured (set RADIUS_INTERNAL_TOKEN)");
+    }
+
     let router_timeout = Duration::from_secs(
         std::env::var("ROUTER_API_TIMEOUT_SECS")
             .ok()
@@ -56,6 +61,7 @@ async fn main() {
         db,
         encryption_key,
         admin_auth,
+        radius_auth,
         router_timeout,
     };
 
@@ -114,15 +120,61 @@ async fn main() {
             "/api/vouchers/batches/{batch_id}/codes",
             get(handlers::vouchers::batch_codes),
         )
+        .route(
+            "/api/accounts",
+            get(handlers::accounts::list).post(handlers::accounts::create),
+        )
+        .route(
+            "/api/accounts/{id}",
+            get(handlers::accounts::detail)
+                .put(handlers::accounts::update)
+                .delete(handlers::accounts::delete),
+        )
+        .route(
+            "/api/accounts/{id}/password",
+            post(handlers::accounts::reset_password),
+        )
+        .route(
+            "/api/accounts/{id}/suspend",
+            post(handlers::accounts::suspend),
+        )
+        .route(
+            "/api/accounts/{id}/reactivate",
+            post(handlers::accounts::reactivate),
+        )
+        .route("/api/accounts/{id}/renew", post(handlers::accounts::renew))
+        .route(
+            "/api/accounts/{id}/packages",
+            get(handlers::accounts::packages),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_admin,
+        ));
+
+    let internal = Router::new()
+        .route(
+            "/internal/radius/authorize",
+            post(handlers::radius::authorize),
+        )
+        .route(
+            "/internal/radius/authenticate",
+            post(handlers::radius::authenticate),
+        )
+        .route(
+            "/internal/radius/accounting",
+            post(handlers::radius::accounting),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_internal,
         ));
 
     let app = Router::new()
         .route("/api/health", get(handlers::health::health))
         .route("/api/health/db", get(handlers::health::health_db))
         .merge(routers)
+        .merge(internal)
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3100));

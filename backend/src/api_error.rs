@@ -3,7 +3,9 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
+use rwisp_server::accounts::AccountError;
 use rwisp_server::packages::PackageError;
+use rwisp_server::radius::RadiusError;
 use rwisp_server::routers::RouterError;
 use rwisp_server::rwispros::RouterOsError;
 use rwisp_server::vouchers::VoucherError;
@@ -115,6 +117,42 @@ impl From<VoucherError> for ApiError {
             VoucherError::Conflict { message } => Self::conflict(message),
             VoucherError::Database(error) => {
                 eprintln!("voucher API database error: {error}");
+                Self::internal()
+            }
+        }
+    }
+}
+
+impl From<AccountError> for ApiError {
+    fn from(error: AccountError) -> Self {
+        match error {
+            AccountError::Validation { field, message } => {
+                Self::bad_request(format!("invalid `{field}`: {message}"))
+            }
+            AccountError::NotFound { id } => Self::not_found(format!("account {id} was not found")),
+            AccountError::Conflict { message } => Self::conflict(message),
+            AccountError::Password { message } => {
+                eprintln!("account password error: {message}");
+                Self::internal()
+            }
+            AccountError::Database(error) => {
+                eprintln!("account API database error: {error}");
+                Self::internal()
+            }
+        }
+    }
+}
+
+impl From<RadiusError> for ApiError {
+    fn from(error: RadiusError) -> Self {
+        match error {
+            RadiusError::BadRequest { message } => Self::bad_request(message),
+            RadiusError::Database(error) => {
+                eprintln!("radius database error: {error}");
+                Self::internal()
+            }
+            RadiusError::Internal { message } => {
+                eprintln!("radius internal error: {message}");
                 Self::internal()
             }
         }

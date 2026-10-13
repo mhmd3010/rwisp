@@ -1,0 +1,46 @@
+# RWISP RADIUS policy (FreeRADIUS 3.0.21).
+#
+# Copy to /etc/freeradius/3.0/policy.d/rwisp-rest and set RADIUS_TOKEN to the
+# same value as the RWISP RADIUS_INTERNAL_TOKEN environment variable.
+#
+# SECTION ORDER (critical):
+#
+#   authorize {
+#       ...            # preprocess, chap, mschap, digest, eap, files, sql,
+#                      # expiration, logintime, pap  <- stock order
+#       rwisp-rest     # MUST be last: pap/chap set Auth-Type; rwisp-rest
+#                      # overwrites it with Auth-Type := rest. Placing it
+#                      # earlier lets pap/chap win and bypass RWISP auth.
+#   }
+#
+#   authenticate {
+#       Auth-Type rest {
+#           rwisp-rest # verifies the credential, then activates
+#       }
+#   }
+#
+#   accounting {
+#       sql            # radacct (SimUse + native accounting)
+#       rwisp-rest     # RWISP 64-bit session tracking (idempotent)
+#   }
+#
+# The authorize endpoint is POLICY ONLY: it returns limits and
+# `control:Auth-Type := rest`. It never returns Accept and never activates, so
+# authentication cannot be bypassed and nothing is activated before the
+# credential is proven in the authenticate section.
+#
+# Optional FreeRADIUS-side sqlcounters are deliberately NOT enabled (see
+# mods-available/sqlcounter.disabled): Rust is authoritative for
+# subscription-scoped 64-bit usage limits.
+
+rwisp-rest {
+	update control {
+		&REST-HTTP-Header := "Authorization: Bearer RADIUS_INTERNAL_TOKEN_PLACEHOLDER"
+	}
+	rest
+	# Non-2xx from RWISP (401 reject / 403 userlock / 404 notfound / 5xx fail)
+	# must reject. Fail closed.
+	if (reject || fail || notfound || userlock) {
+		reject
+	}
+}

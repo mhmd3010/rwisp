@@ -12,5 +12,6 @@ pub struct AppState {
     pub db: MySqlPool,
     pub encryption_key: Option<Arc<EncryptionKey>>,
     pub admin_auth: Option<Arc<AdminAuthConfig>>,
+    pub radius_auth: Option<Arc<AdminAuthConfig>>,
     pub router_timeout: Duration,
 }
