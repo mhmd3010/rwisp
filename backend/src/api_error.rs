@@ -45,6 +45,13 @@ impl ApiError {
         }
     }
 
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: message.into(),
+        }
+    }
+
     pub fn service_unavailable(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
@@ -67,6 +74,13 @@ impl IntoResponse for ApiError {
     }
 }
 
+impl From<sqlx::Error> for ApiError {
+    fn from(error: sqlx::Error) -> Self {
+        eprintln!("API database error: {error}");
+        Self::internal()
+    }
+}
+
 impl From<RouterError> for ApiError {
     fn from(error: RouterError) -> Self {
         match error {
@@ -81,6 +95,7 @@ impl From<RouterError> for ApiError {
                 eprintln!("router API credential error: {error}");
                 Self::internal()
             }
+            RouterError::Validation { message } => Self::bad_request(message),
         }
     }
 }
@@ -153,6 +168,40 @@ impl From<RadiusError> for ApiError {
             }
             RadiusError::Internal { message } => {
                 eprintln!("radius internal error: {message}");
+                Self::internal()
+            }
+        }
+    }
+}
+
+impl From<rwisp_server::sessions::SessionError> for ApiError {
+    fn from(error: rwisp_server::sessions::SessionError) -> Self {
+        match error {
+            rwisp_server::sessions::SessionError::Validation { field, message } => {
+                Self::bad_request(format!("invalid `{field}`: {message}"))
+            }
+            rwisp_server::sessions::SessionError::NotFound { id } => {
+                Self::not_found(format!("session {id} was not found"))
+            }
+            rwisp_server::sessions::SessionError::Database(error) => {
+                eprintln!("session API database error: {error}");
+                Self::internal()
+            }
+        }
+    }
+}
+
+impl From<rwisp_server::disconnects::DisconnectError> for ApiError {
+    fn from(error: rwisp_server::disconnects::DisconnectError) -> Self {
+        match error {
+            rwisp_server::disconnects::DisconnectError::Validation { field, message } => {
+                Self::bad_request(format!("invalid `{field}`: {message}"))
+            }
+            rwisp_server::disconnects::DisconnectError::NotFound { id } => {
+                Self::not_found(format!("disconnect {id} was not found"))
+            }
+            rwisp_server::disconnects::DisconnectError::Database(error) => {
+                eprintln!("disconnect API database error: {error}");
                 Self::internal()
             }
         }

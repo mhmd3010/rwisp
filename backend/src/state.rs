@@ -13,5 +13,6 @@ pub struct AppState {
     pub encryption_key: Option<Arc<EncryptionKey>>,
     pub admin_auth: Option<Arc<AdminAuthConfig>>,
     pub radius_auth: Option<Arc<AdminAuthConfig>>,
+    pub rate_limiter: Option<Arc<crate::admin::RateLimiter>>,
     pub router_timeout: Duration,
 }

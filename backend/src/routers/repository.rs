@@ -9,13 +9,19 @@ use crate::routers::model::{NewRouter, RouterRecord, RouterUpdate};
 use crate::rwispros::{RouterClient, RouterConfig, Transport};
 
 const SELECT_ROUTER_WITH_CREDENTIALS: &str = "SELECT id, name, host, api_port, username, transport, \
-    timeout_secs, radius_nas_ip, enabled, CAST(created_at AS CHAR) AS created_at, \
-    CAST(updated_at AS CHAR) AS updated_at, password_encrypted FROM tbl_routers WHERE id = ?";
+    timeout_secs, radius_nas_ip, nas_identifier, coa_address, coa_port, auth_reachable, \
+    disconnect_reachable, (coa_secret_encrypted IS NOT NULL) AS has_coa_secret, \
+    (nas_secret_encrypted IS NOT NULL) AS has_nas_secret, enabled, \
+    CAST(created_at AS CHAR) AS created_at, CAST(updated_at AS CHAR) AS updated_at, \
+    password_encrypted FROM tbl_routers WHERE id = ?";
 
 macro_rules! select_router_sql {
     ($suffix:literal) => {
         concat!(
-            "SELECT id, name, host, api_port, username, transport, timeout_secs, radius_nas_ip, enabled, ",
+            "SELECT id, name, host, api_port, username, transport, timeout_secs, radius_nas_ip, ",
+            "nas_identifier, coa_address, coa_port, auth_reachable, disconnect_reachable, ",
+            "(coa_secret_encrypted IS NOT NULL) AS has_coa_secret, ",
+            "(nas_secret_encrypted IS NOT NULL) AS has_nas_secret, enabled, ",
             "CAST(created_at AS CHAR) AS created_at, CAST(updated_at AS CHAR) AS updated_at ",
             "FROM tbl_routers ",
             $suffix
@@ -35,6 +41,10 @@ impl FromRow<'_, MySqlRow> for RouterRecord {
 
         let timeout_secs: u32 = row.try_get("timeout_secs")?;
         let enabled_raw: i8 = row.try_get("enabled")?;
+        let auth_reachable_raw: i8 = row.try_get("auth_reachable")?;
+        let disconnect_reachable_raw: i8 = row.try_get("disconnect_reachable")?;
+        let has_coa_secret: i64 = row.try_get("has_coa_secret")?;
+        let has_nas_secret: i64 = row.try_get("has_nas_secret")?;
 
         Ok(Self {
             id: row.try_get("id")?,
@@ -45,6 +55,13 @@ impl FromRow<'_, MySqlRow> for RouterRecord {
             transport,
             timeout: Duration::from_secs(u64::from(timeout_secs)),
             radius_nas_ip: row.try_get("radius_nas_ip")?,
+            nas_identifier: row.try_get("nas_identifier")?,
+            coa_address: row.try_get("coa_address")?,
+            coa_port: row.try_get("coa_port")?,
+            auth_reachable: auth_reachable_raw != 0,
+            disconnect_reachable: disconnect_reachable_raw != 0,
+            has_coa_secret: has_coa_secret != 0,
+            has_nas_secret: has_nas_secret != 0,
             enabled: enabled_raw != 0,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
@@ -62,8 +79,9 @@ pub async fn create_router(
     let result = sqlx::query(
         "INSERT INTO tbl_routers \
          (name, host, api_port, username, password_encrypted, transport, timeout_secs, \
-          radius_nas_ip, enabled) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          radius_nas_ip, nas_identifier, coa_address, coa_port, auth_reachable, \
+          disconnect_reachable, enabled) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&router.name)
     .bind(&router.host)
@@ -73,6 +91,11 @@ pub async fn create_router(
     .bind(router.transport.as_str())
     .bind(router.timeout.as_secs() as u32)
     .bind(&router.radius_nas_ip)
+    .bind(&router.nas_identifier)
+    .bind(&router.coa_address)
+    .bind(router.coa_port)
+    .bind(i8::from(router.auth_reachable))
+    .bind(i8::from(router.disconnect_reachable))
     .bind(i8::from(router.enabled))
     .execute(pool)
     .await?;
@@ -119,7 +142,8 @@ pub async fn update_router(
         "UPDATE tbl_routers SET \
          name = ?, host = ?, api_port = ?, username = ?, \
          password_encrypted = COALESCE(?, password_encrypted), \
-         transport = ?, timeout_secs = ?, radius_nas_ip = ?, enabled = ? \
+         transport = ?, timeout_secs = ?, radius_nas_ip = ?, nas_identifier = ?, \
+         coa_address = ?, coa_port = ?, auth_reachable = ?, disconnect_reachable = ?, enabled = ? \
          WHERE id = ?",
     )
     .bind(&update.name)
@@ -130,6 +154,11 @@ pub async fn update_router(
     .bind(update.transport.as_str())
     .bind(update.timeout.as_secs() as u32)
     .bind(&update.radius_nas_ip)
+    .bind(&update.nas_identifier)
+    .bind(&update.coa_address)
+    .bind(update.coa_port)
+    .bind(i8::from(update.auth_reachable))
+    .bind(i8::from(update.disconnect_reachable))
     .bind(i8::from(update.enabled))
     .bind(id)
     .execute(pool)
@@ -173,4 +202,103 @@ pub async fn connect_router(
 
     let client = RouterClient::connect(config).await?;
     Ok(client)
+}
+
+/// Encrypt and store (or clear, when `None`) the router's CoA shared secret.
+pub async fn set_coa_secret(
+    pool: &MySqlPool,
+    id: u64,
+    key: &EncryptionKey,
+    secret: Option<&str>,
+) -> Result<bool, RouterError> {
+    let encrypted = match secret {
+        Some(secret) => Some(key.encrypt(secret)?),
+        None => None,
+    };
+    let result = sqlx::query("UPDATE tbl_routers SET coa_secret_encrypted = ? WHERE id = ?")
+        .bind(encrypted)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Encrypt and store (or clear, when `None`) the router's NAS RADIUS secret.
+pub async fn set_nas_secret(
+    pool: &MySqlPool,
+    id: u64,
+    key: &EncryptionKey,
+    secret: Option<&str>,
+) -> Result<bool, RouterError> {
+    let encrypted = match secret {
+        Some(secret) => Some(key.encrypt(secret)?),
+        None => None,
+    };
+    let result = sqlx::query("UPDATE tbl_routers SET nas_secret_encrypted = ? WHERE id = ?")
+        .bind(encrypted)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouterStatus {
+    pub router_id: u64,
+    pub checked_at: String,
+    pub reachable: bool,
+    pub latency_ms: Option<u32>,
+    pub version: Option<String>,
+    pub identity: Option<String>,
+    pub error: Option<String>,
+}
+
+impl FromRow<'_, MySqlRow> for RouterStatus {
+    fn from_row(row: &MySqlRow) -> Result<Self, sqlx::Error> {
+        let reachable: i8 = row.try_get("reachable")?;
+        Ok(Self {
+            router_id: row.try_get("router_id")?,
+            checked_at: row.try_get("checked_at")?,
+            reachable: reachable != 0,
+            latency_ms: row.try_get("latency_ms")?,
+            version: row.try_get("version")?,
+            identity: row.try_get("identity")?,
+            error: row.try_get("error")?,
+        })
+    }
+}
+
+const STATUS_COLUMNS: &str = "router_id, CAST(checked_at AS CHAR) AS checked_at, reachable, \
+    latency_ms, version, identity, error";
+
+pub async fn status_history(
+    pool: &MySqlPool,
+    router_id: u64,
+    limit: u32,
+) -> Result<Vec<RouterStatus>, RouterError> {
+    let query = format!(
+        "SELECT {STATUS_COLUMNS} FROM tbl_router_status WHERE router_id = ? \
+         ORDER BY id DESC LIMIT ?"
+    );
+    let rows = sqlx::query_as::<_, RouterStatus>(sqlx::AssertSqlSafe(query))
+        .bind(router_id)
+        .bind(i64::from(limit.clamp(1, 500)))
+        .fetch_all(pool)
+        .await?;
+    Ok(rows)
+}
+
+pub async fn latest_status(
+    pool: &MySqlPool,
+    router_id: u64,
+) -> Result<Option<RouterStatus>, RouterError> {
+    let query = format!(
+        "SELECT {STATUS_COLUMNS} FROM tbl_router_status WHERE router_id = ? \
+         ORDER BY id DESC LIMIT 1"
+    );
+    let row = sqlx::query_as::<_, RouterStatus>(sqlx::AssertSqlSafe(query))
+        .bind(router_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row)
 }

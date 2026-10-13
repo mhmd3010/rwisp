@@ -1,8 +1,13 @@
 pub mod accounts;
+pub mod admin;
 pub mod common;
+pub mod dashboard;
+pub mod disconnects;
 pub mod health;
 pub mod hotspot;
 pub mod packages;
 pub mod radius;
 pub mod routers;
+pub mod scheduler;
+pub mod sessions;
 pub mod vouchers;

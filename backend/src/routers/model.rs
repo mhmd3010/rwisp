@@ -13,6 +13,13 @@ pub struct RouterRecord {
     pub transport: Transport,
     pub timeout: Duration,
     pub radius_nas_ip: Option<String>,
+    pub nas_identifier: Option<String>,
+    pub coa_address: Option<String>,
+    pub coa_port: Option<u16>,
+    pub auth_reachable: bool,
+    pub disconnect_reachable: bool,
+    pub has_coa_secret: bool,
+    pub has_nas_secret: bool,
     pub enabled: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -27,6 +34,11 @@ pub struct NewRouter {
     pub transport: Transport,
     pub timeout: Duration,
     pub radius_nas_ip: Option<String>,
+    pub nas_identifier: Option<String>,
+    pub coa_address: Option<String>,
+    pub coa_port: Option<u16>,
+    pub auth_reachable: bool,
+    pub disconnect_reachable: bool,
     pub enabled: bool,
 }
 
@@ -47,6 +59,11 @@ impl NewRouter {
             transport,
             timeout: Duration::from_secs(10),
             radius_nas_ip: None,
+            nas_identifier: None,
+            coa_address: None,
+            coa_port: None,
+            auth_reachable: true,
+            disconnect_reachable: true,
             enabled: true,
         }
     }
@@ -71,6 +88,23 @@ impl NewRouter {
         self
     }
 
+    pub fn with_nas_identifier(mut self, value: impl Into<String>) -> Self {
+        self.nas_identifier = Some(value.into());
+        self
+    }
+
+    pub fn with_coa(mut self, address: impl Into<String>, port: u16) -> Self {
+        self.coa_address = Some(address.into());
+        self.coa_port = Some(port);
+        self.disconnect_reachable = true;
+        self
+    }
+
+    pub fn with_disconnect_reachable(mut self, value: bool) -> Self {
+        self.disconnect_reachable = value;
+        self
+    }
+
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
@@ -90,8 +124,12 @@ impl fmt::Debug for NewRouter {
             .field("username", &self.username)
             .field("password", &"<redacted>")
             .field("transport", &self.transport)
-            .field("timeout", &self.timeout)
             .field("radius_nas_ip", &self.radius_nas_ip)
+            .field("nas_identifier", &self.nas_identifier)
+            .field("coa_address", &self.coa_address)
+            .field("coa_port", &self.coa_port)
+            .field("auth_reachable", &self.auth_reachable)
+            .field("disconnect_reachable", &self.disconnect_reachable)
             .field("enabled", &self.enabled)
             .finish()
     }
@@ -106,6 +144,11 @@ pub struct RouterUpdate {
     pub transport: Transport,
     pub timeout: Duration,
     pub radius_nas_ip: Option<String>,
+    pub nas_identifier: Option<String>,
+    pub coa_address: Option<String>,
+    pub coa_port: Option<u16>,
+    pub auth_reachable: bool,
+    pub disconnect_reachable: bool,
     pub enabled: bool,
 }
 
@@ -120,6 +163,11 @@ impl RouterUpdate {
             transport: record.transport,
             timeout: record.timeout,
             radius_nas_ip: record.radius_nas_ip.clone(),
+            nas_identifier: record.nas_identifier.clone(),
+            coa_address: record.coa_address.clone(),
+            coa_port: record.coa_port,
+            auth_reachable: record.auth_reachable,
+            disconnect_reachable: record.disconnect_reachable,
             enabled: record.enabled,
         }
     }
@@ -143,8 +191,12 @@ impl fmt::Debug for RouterUpdate {
             .field("username", &self.username)
             .field("password", &self.password.as_ref().map(|_| "<redacted>"))
             .field("transport", &self.transport)
-            .field("timeout", &self.timeout)
             .field("radius_nas_ip", &self.radius_nas_ip)
+            .field("nas_identifier", &self.nas_identifier)
+            .field("coa_address", &self.coa_address)
+            .field("coa_port", &self.coa_port)
+            .field("auth_reachable", &self.auth_reachable)
+            .field("disconnect_reachable", &self.disconnect_reachable)
             .field("enabled", &self.enabled)
             .finish()
     }

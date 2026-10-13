@@ -106,3 +106,20 @@ pub struct HotspotHost {
     pub authorized: bool,
     pub bypassed: bool,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RadiusServer {
+    pub address: Option<String>,
+    pub service: Option<String>,
+    pub disabled: bool,
+}
+
+/// A live session entry on the router (HotSpot or PPPoE active), used for exact
+/// match-then-remove disconnects.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ActiveSessionEntry {
+    pub id: Option<String>,
+    pub user: Option<String>,
+    pub mac: Option<String>,
+    pub address: Option<String>,
+}

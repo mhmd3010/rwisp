@@ -3,8 +3,8 @@ use mikrotik_rs::{CommandBuilder, Event, ReplyResponse};
 use crate::rwispros::connection::RouterClient;
 use crate::rwispros::errors::{Result, RouterOsError};
 use crate::rwispros::types::{
-    HotspotActive, HotspotHost, HotspotIpBinding, HotspotProfile, HotspotServer, HotspotUser,
-    Identity, Resources,
+    ActiveSessionEntry, HotspotActive, HotspotHost, HotspotIpBinding, HotspotProfile,
+    HotspotServer, HotspotUser, Identity, RadiusServer, Resources,
 };
 
 impl RouterClient {
@@ -73,7 +73,6 @@ impl RouterClient {
         let replies = self.run_read_command("/ip/hotspot/print").await?;
         Ok(replies.iter().map(hotspot_server).collect())
     }
-
     pub async fn get_hotspot_profiles(&self) -> Result<Vec<HotspotProfile>> {
         let replies = self.run_read_command("/ip/hotspot/profile/print").await?;
         Ok(replies.iter().map(hotspot_profile).collect())
@@ -99,6 +98,19 @@ impl RouterClient {
     pub async fn get_hotspot_hosts(&self) -> Result<Vec<HotspotHost>> {
         let replies = self.run_read_command("/ip/hotspot/host/print").await?;
         Ok(replies.iter().map(hotspot_host).collect())
+    }
+
+    /// Configured RADIUS servers (`/radius/print`), used for provisioning.
+    pub async fn get_radius_servers(&self) -> Result<Vec<RadiusServer>> {
+        let replies = self.run_read_command("/radius/print").await?;
+        Ok(replies
+            .iter()
+            .map(|reply| RadiusServer {
+                address: attr(reply, "address"),
+                service: attr(reply, "service"),
+                disabled: bool_attr(reply, "disabled"),
+            })
+            .collect())
     }
 }
 
@@ -215,6 +227,117 @@ fn bool_attr(reply: &ReplyResponse, key: &str) -> bool {
         ),
         Some(None) => true,
         None => false,
+    }
+}
+
+impl RouterClient {
+    /// Raw `/ip/hotspot/active/print` replies (for reconciliation and targeting).
+    pub async fn get_hotspot_active_raw(&self) -> Result<Vec<ReplyResponse>> {
+        self.run_read_command("/ip/hotspot/active/print").await
+    }
+
+    /// HotSpot active sessions as structured entries (`.id`, user, MAC, address).
+    pub async fn get_hotspot_active_entries(&self) -> Result<Vec<ActiveSessionEntry>> {
+        let replies = self.run_read_command("/ip/hotspot/active/print").await?;
+        Ok(replies
+            .iter()
+            .map(|reply| ActiveSessionEntry {
+                id: attr(reply, ".id"),
+                user: attr(reply, "user"),
+                mac: attr(reply, "mac-address"),
+                address: attr(reply, "address"),
+            })
+            .collect())
+    }
+
+    /// PPPoE active sessions as structured entries (`.id`, name, caller-id, address).
+    pub async fn get_ppp_active_entries(&self) -> Result<Vec<ActiveSessionEntry>> {
+        let replies = self.run_read_command("/ppp/active/print").await?;
+        Ok(replies
+            .iter()
+            .map(|reply| ActiveSessionEntry {
+                id: attr(reply, ".id"),
+                user: attr(reply, "name"),
+                mac: attr(reply, "caller-id"),
+                address: attr(reply, "address"),
+            })
+            .collect())
+    }
+
+    /// Remove an active HotSpot session by its RouterOS `.id` (documented API).
+    pub async fn remove_hotspot_active(&self, id: &str) -> Result<()> {
+        let command = CommandBuilder::new()
+            .command("/ip/hotspot/active/remove")
+            .attribute(".id", Some(id))
+            .build();
+        self.run_write_command(command).await
+    }
+
+    /// Remove an active PPPoE session by its RouterOS `.id` (documented API).
+    pub async fn remove_ppp_active(&self, id: &str) -> Result<()> {
+        let command = CommandBuilder::new()
+            .command("/ppp/active/remove")
+            .attribute(".id", Some(id))
+            .build();
+        self.run_write_command(command).await
+    }
+
+    /// Find the active-session `.id` matching a session by MAC, framed IP or user.
+    pub async fn find_hotspot_active_id(
+        &self,
+        mac_address: Option<&str>,
+        framed_ip: Option<&str>,
+        username: &str,
+    ) -> Result<Option<String>> {
+        let replies = self.run_read_command("/ip/hotspot/active/print").await?;
+        for reply in &replies {
+            let mac = attr(reply, "mac-address");
+            let address = attr(reply, "address");
+            let user = attr(reply, "user");
+            let matches = (mac_address.is_some() && mac.as_deref() == mac_address)
+                || (framed_ip.is_some() && address.as_deref() == framed_ip)
+                || user.as_deref() == Some(username);
+            if matches {
+                return Ok(attr(reply, ".id"));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Add a RADIUS server entry for HotSpot (`/radius/add`, documented v7 API).
+    pub async fn add_radius_server(
+        &self,
+        address: &str,
+        secret: &str,
+        timeout_secs: u32,
+    ) -> Result<()> {
+        let command = CommandBuilder::new()
+            .command("/radius/add")
+            .attribute("address", Some(address))
+            .attribute("secret", Some(secret))
+            .attribute("service", Some("hotspot"))
+            .attribute("timeout", Some(&timeout_secs.to_string()))
+            .build();
+        self.run_write_command(command).await
+    }
+
+    async fn run_write_command(&self, command: mikrotik_rs::Command) -> Result<()> {
+        let mut receiver = self.device().send_command(command).await?;
+        while let Some(event) = receiver.recv().await {
+            match event {
+                Event::Done { .. } | Event::Empty { .. } => return Ok(()),
+                Event::Reply { .. } => {}
+                Event::Trap { response, .. } => {
+                    return Err(RouterOsError::Command {
+                        message: response.message,
+                    });
+                }
+                Event::Fatal { reason } => {
+                    return Err(RouterOsError::Protocol { message: reason });
+                }
+            }
+        }
+        Err(RouterOsError::ConnectionClosed)
     }
 }
 

@@ -8,6 +8,6 @@ pub mod types;
 pub use connection::{RouterClient, RouterConfig, Transport};
 pub use errors::{Result, RouterOsError};
 pub use types::{
-    HotspotActive, HotspotHost, HotspotIpBinding, HotspotProfile, HotspotServer, HotspotUser,
-    Identity, Resources,
+    ActiveSessionEntry, HotspotActive, HotspotHost, HotspotIpBinding, HotspotProfile,
+    HotspotServer, HotspotUser, Identity, RadiusServer, Resources,
 };

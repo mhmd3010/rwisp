@@ -44,7 +44,7 @@ pub async fn run_maintenance(pool: &MySqlPool) -> Result<MaintenanceReport, Radi
 ///
 /// The account row is locked per activation so this is safe to run alongside
 /// live authentication, and suspended accounts stay suspended.
-async fn activate_due_scheduled_renewals(pool: &MySqlPool) -> Result<u64, RadiusError> {
+pub async fn activate_due_scheduled_renewals(pool: &MySqlPool) -> Result<u64, RadiusError> {
     let due = sqlx::query(
         "SELECT ap.id AS assignment_id, ap.account_id \
          FROM tbl_account_packages ap \

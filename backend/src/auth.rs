@@ -46,16 +46,36 @@ impl fmt::Debug for AdminAuthConfig {
 
 pub async fn require_admin(
     State(state): State<AppState>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Result<Response, ApiError> {
-    require_token(
-        state.admin_auth.as_deref(),
-        "router API authentication is not configured",
-        request,
-        next,
-    )
-    .await
+    let candidate = request
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(bearer_token)
+        .ok_or_else(ApiError::unauthorized)?;
+
+    // Bootstrap token (backward compatible) is always role admin; otherwise
+    // resolve against the DB admin-token store.
+    let identity = match state.admin_auth.as_deref() {
+        Some(config) if config.verify(candidate) => Some(crate::admin::AdminIdentity {
+            actor: "bootstrap".to_string(),
+            role: crate::admin::Role::Admin,
+        }),
+        _ => crate::admin::verify_db_token(&state.db, candidate).await?,
+    };
+
+    let identity = identity.ok_or_else(ApiError::unauthorized)?;
+
+    if let Some(limiter) = &state.rate_limiter
+        && !limiter.check(&identity.actor).await
+    {
+        return Err(ApiError::forbidden("rate limit exceeded"));
+    }
+
+    request.extensions_mut().insert(identity);
+    Ok(next.run(request).await)
 }
 
 pub async fn require_internal(

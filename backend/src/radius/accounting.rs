@@ -12,20 +12,49 @@ enum AcctStatus {
     Stop,
 }
 
+/// Classification of the `Acct-Status-Type` value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AcctStatusKind {
+    /// Session lifecycle events we persist.
+    Session(AcctStatus),
+    /// RFC 2866 non-session events (Accounting-On/Off, Tunnel-*, Failed).
+    NonSession,
+    /// A value we do not recognise at all.
+    Unknown,
+}
+
+/// `rlm_rest` may encode enumerated attributes as the numeric value depending on
+/// `raw_value`; accept both the RFC 2866 integer and the textual form.
+fn classify_status(raw: &str) -> AcctStatusKind {
+    let trimmed = raw.trim();
+
+    if let Ok(number) = trimmed.parse::<i64>() {
+        return match number {
+            1 => AcctStatusKind::Session(AcctStatus::Start),
+            2 => AcctStatusKind::Session(AcctStatus::Stop),
+            3 => AcctStatusKind::Session(AcctStatus::Interim),
+            7..=15 => AcctStatusKind::NonSession,
+            _ => AcctStatusKind::Unknown,
+        };
+    }
+
+    match trimmed.to_ascii_lowercase().replace('_', "-").as_str() {
+        "start" => AcctStatusKind::Session(AcctStatus::Start),
+        "stop" => AcctStatusKind::Session(AcctStatus::Stop),
+        "interim-update" | "interim" => AcctStatusKind::Session(AcctStatus::Interim),
+        "accounting-on" | "accounting-off" | "tunnel-start" | "tunnel-stop" | "tunnel-reject"
+        | "tunnel-link-start" | "tunnel-link-stop" | "tunnel-link-reject" | "failed" => {
+            AcctStatusKind::NonSession
+        }
+        _ => AcctStatusKind::Unknown,
+    }
+}
+
 fn combine_gigawords(octets: u64, gigawords: u64) -> u64 {
     octets.saturating_add(gigawords.saturating_mul(1 << 32))
 }
 
 impl AcctStatus {
-    fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "start" => Some(Self::Start),
-            "interim-update" | "interim" => Some(Self::Interim),
-            "stop" => Some(Self::Stop),
-            _ => None,
-        }
-    }
-
     fn as_str(&self) -> &'static str {
         match self {
             Self::Start => "start",
@@ -46,9 +75,22 @@ pub async fn process(pool: &MySqlPool, request: &RadiusRequest) -> Result<(), Ra
         .ok_or_else(|| RadiusError::BadRequest {
             message: "Acct-Status-Type is required".to_string(),
         })?;
-    let Some(status) = AcctStatus::parse(status_raw) else {
-        // Accounting-On/Off and other types are not session events.
-        return Ok(());
+    let status = match classify_status(status_raw) {
+        AcctStatusKind::Session(status) => status,
+        // Explicitly recognised non-session events: acknowledged, but never
+        // treated as a successful session update.
+        AcctStatusKind::NonSession => {
+            eprintln!(
+                "radius accounting: ignoring non-session event Acct-Status-Type={status_raw}"
+            );
+            return Ok(());
+        }
+        // Unknown value: fail explicitly instead of silently acknowledging.
+        AcctStatusKind::Unknown => {
+            return Err(RadiusError::BadRequest {
+                message: format!("unrecognised Acct-Status-Type: {status_raw}"),
+            });
+        }
     };
 
     let username = request
@@ -196,4 +238,56 @@ pub async fn open_disconnect_candidates(
         });
     }
     Ok(targets)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AcctStatus, AcctStatusKind, classify_status};
+
+    #[test]
+    fn classifies_numeric_enumerations() {
+        assert_eq!(
+            classify_status("1"),
+            AcctStatusKind::Session(AcctStatus::Start)
+        );
+        assert_eq!(
+            classify_status("2"),
+            AcctStatusKind::Session(AcctStatus::Stop)
+        );
+        assert_eq!(
+            classify_status("3"),
+            AcctStatusKind::Session(AcctStatus::Interim)
+        );
+    }
+
+    #[test]
+    fn classifies_textual_enumerations() {
+        assert_eq!(
+            classify_status("Start"),
+            AcctStatusKind::Session(AcctStatus::Start)
+        );
+        assert_eq!(
+            classify_status("interim-update"),
+            AcctStatusKind::Session(AcctStatus::Interim)
+        );
+        assert_eq!(
+            classify_status("STOP"),
+            AcctStatusKind::Session(AcctStatus::Stop)
+        );
+    }
+
+    #[test]
+    fn non_session_events_are_recognised_not_unknown() {
+        assert_eq!(classify_status("7"), AcctStatusKind::NonSession);
+        assert_eq!(classify_status("8"), AcctStatusKind::NonSession);
+        assert_eq!(classify_status("Accounting-On"), AcctStatusKind::NonSession);
+        assert_eq!(classify_status("Failed"), AcctStatusKind::NonSession);
+    }
+
+    #[test]
+    fn unknown_values_are_explicit() {
+        assert_eq!(classify_status("99"), AcctStatusKind::Unknown);
+        assert_eq!(classify_status("bogus"), AcctStatusKind::Unknown);
+        assert_eq!(classify_status(""), AcctStatusKind::Unknown);
+    }
 }

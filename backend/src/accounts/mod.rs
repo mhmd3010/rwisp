@@ -9,7 +9,7 @@ pub use model::{
     ActivationOutcome, NewAccount, PackageActivation, PasswordReset, RenewalRequest, RenewalResult,
     StatusOutcome, SubscriptionStatus,
 };
-pub use password::verify_password;
+pub use password::{hash_password, verify_password};
 pub use repository::{
     activate_account, create_account, delete_account, expire_overdue_subscriptions, get_account,
     get_account_by_username, list_account_packages, list_accounts, reactivate_account,

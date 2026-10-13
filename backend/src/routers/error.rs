@@ -10,6 +10,7 @@ pub enum RouterError {
     RouterOs(RouterOsError),
     NotFound { id: u64 },
     Disabled { id: u64 },
+    Validation { message: String },
 }
 
 impl fmt::Display for RouterError {
@@ -20,6 +21,7 @@ impl fmt::Display for RouterError {
             Self::RouterOs(error) => write!(f, "router connection error: {error}"),
             Self::NotFound { id } => write!(f, "router {id} was not found"),
             Self::Disabled { id } => write!(f, "router {id} is disabled"),
+            Self::Validation { message } => write!(f, "invalid router request: {message}"),
         }
     }
 }

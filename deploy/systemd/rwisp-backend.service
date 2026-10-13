@@ -1,0 +1,46 @@
+# RWISP backend systemd unit (Debian 11).
+#
+# Install (do not run automatically without review):
+#   sudo cp deploy/systemd/rwisp-backend.service /etc/systemd/system/
+#   sudo cp deploy/systemd/rwisp.env.example /etc/rwisp/rwisp.env   # then edit
+#   sudo chown root:root /etc/rwisp/rwisp.env && sudo chmod 600 /etc/rwisp/rwisp.env
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rwisp-backend
+#
+# The background scheduler runs inside this unit by default. To run multiple API
+# instances behind Nginx, keep SCHEDULER_ENABLED=true on exactly one unit and set
+# false on the others (jobs are additionally protected by database leases).
+
+[Unit]
+Description=RWISP ISP backend (Axum API + background scheduler)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rwisp
+Group=rwisp
+WorkingDirectory=/var/www/rwisp/backend
+EnvironmentFile=/etc/rwisp/rwisp.env
+ExecStart=/var/www/rwisp/backend/target/release/rwisp-server
+Restart=on-failure
+RestartSec=3
+# Graceful shutdown: the API stops accepting connections and the scheduler
+# finishes its current tick before exiting on SIGTERM.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/rwisp/backend
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rwisp-backend
+
+[Install]
+WantedBy=multi-user.target
